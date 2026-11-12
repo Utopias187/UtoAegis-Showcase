@@ -23,6 +23,7 @@ the implementation is maintained in private repositories.
 - A separately privileged HTTPS updater with retention and rollout telemetry
 - Atomic live detector replacement with last-known-good fallback and generation leases
 - Bounded tamper-evident event chains with authenticated HTTPS forwarding
+- Signed dual-architecture releases with SBOMs and transactional rollback
 
 ## Architecture
 
@@ -48,13 +49,21 @@ flowchart LR
     MonitorSpool --> Forwarder[Read-only telemetry forwarder]
     UpdaterSpool --> Forwarder
     Forwarder --> Collector[Authenticated HTTPS collector]
+
+    Source[Locked source and dependencies] --> Release[Dual-architecture release]
+    Release --> Evidence[SBOM and exact inventory]
+    Evidence --> Signing[Authenticode and CMS signatures]
+    Signing --> Deploy[Verified staged upgrade]
+    Deploy --> Rollback[Transactional rollback]
 ```
 
 The monitoring service remains read-only toward managed threat content. The
 updater is the only component granted content-store write access, while private
 signing keys stay off endpoints. Monitor and updater telemetry spools remain
 separate; only the forwarder can read the collector credential and use the
-telemetry network boundary.
+telemetry network boundary. Release verification independently binds every packaged
+file, the software bill of materials, and owned binaries before a staged service
+upgrade can change Service Control Manager paths.
 
 ## Milestone progression
 
@@ -73,6 +82,7 @@ telemetry network boundary.
 | 11 | Live threat-intelligence reloading |
 | 11.1 | Read-only reload polling correction |
 | 12 | Tamper-evident security telemetry |
+| 13 | Signed releases and deployment hardening |
 
 ## Security-engineering highlights
 
@@ -87,17 +97,24 @@ telemetry network boundary.
 - Monitoring, updating, and telemetry forwarding use separate least-privilege identities.
 - Telemetry chains expose modification, reordering, stale checkpoints, and retention gaps.
 - Collector checkpoints advance only after an exact sequence-and-hash acknowledgement.
+- Release manifests reject missing, extra, modified, traversing, or reparse-point content.
+- Production bundles require approved CMS and Authenticode signing evidence.
+- Multi-service upgrades restore prior paths and running states on failure.
 
 ## Verification snapshot
 
-The Milestone 12 baseline was verified with:
+The Milestone 13 baseline was verified with:
 
 - .NET 10 Release build with zero warnings and zero errors
 - 265 passing automated tests across 12 projects
 - Locked dependency restoration with one lock file per project
 - Direct and transitive NuGet vulnerability auditing
 - Formatter verification
-- PowerShell parser validation for all 13 deployment scripts
+- Two passing PowerShell release and deployment integration suites
+- PowerShell parser validation for all 23 automation and deployment scripts
+- CycloneDX 1.7 schema validation for the 37-component release SBOM
+- Verified locked publishing for `win-x64` and `win-arm64`
+- Verified 176-file extracted development archive and SHA-256 checksum
 - A clean unfinished-work marker scan and a concise-comment audit
 
 This is an engineering portfolio project, not a claim of independent antivirus
@@ -106,8 +123,8 @@ certification or guaranteed detection of every malicious file.
 ## Technology
 
 C#, .NET 10, SQLite, MSTest, Windows Services, PowerShell, GitHub Actions,
-ECDSA P-256, SHA-256, HMAC-SHA256, JSON Lines, and Windows filesystem security
-controls.
+ECDSA P-256, SHA-256, HMAC-SHA256, Authenticode, CMS/PKCS #7, CycloneDX 1.7,
+JSON Lines, and Windows filesystem security controls.
 
 ## Ownership
 
