@@ -22,6 +22,7 @@ the implementation is maintained in private repositories.
 - Signed ECDSA P-256 threat-intelligence bundles with anti-rollback state
 - A separately privileged HTTPS updater with retention and rollout telemetry
 - Atomic live detector replacement with last-known-good fallback and generation leases
+- Bounded tamper-evident event chains with authenticated HTTPS forwarding
 
 ## Architecture
 
@@ -41,11 +42,19 @@ flowchart LR
     Signed --> Content[(Managed content store)]
     Content --> Reload[Read-only live reload]
     Reload --> Core
+
+    Service --> MonitorSpool[(Monitor hash chain)]
+    Updater --> UpdaterSpool[(Updater hash chain)]
+    MonitorSpool --> Forwarder[Read-only telemetry forwarder]
+    UpdaterSpool --> Forwarder
+    Forwarder --> Collector[Authenticated HTTPS collector]
 ```
 
 The monitoring service remains read-only toward managed threat content. The
 updater is the only component granted content-store write access, while private
-signing keys stay off endpoints.
+signing keys stay off endpoints. Monitor and updater telemetry spools remain
+separate; only the forwarder can read the collector credential and use the
+telemetry network boundary.
 
 ## Milestone progression
 
@@ -63,6 +72,7 @@ signing keys stay off endpoints.
 | 10 | Production threat-intelligence updater |
 | 11 | Live threat-intelligence reloading |
 | 11.1 | Read-only reload polling correction |
+| 12 | Tamper-evident security telemetry |
 
 ## Security-engineering highlights
 
@@ -74,19 +84,21 @@ signing keys stay off endpoints.
 - Monotonic sequence state prevents replay of older signed content.
 - Candidate detector generations are completely validated before atomic publication.
 - Invalid updates preserve the last-known-good in-memory generation.
-- Monitoring and updating run under separate least-privilege service identities.
+- Monitoring, updating, and telemetry forwarding use separate least-privilege identities.
+- Telemetry chains expose modification, reordering, stale checkpoints, and retention gaps.
+- Collector checkpoints advance only after an exact sequence-and-hash acknowledgement.
 
 ## Verification snapshot
 
-The Milestone 11.1 baseline was verified with:
+The Milestone 12 baseline was verified with:
 
 - .NET 10 Release build with zero warnings and zero errors
-- 249 passing automated tests across ten projects
-- Locked dependency restoration
+- 265 passing automated tests across 12 projects
+- Locked dependency restoration with one lock file per project
 - Direct and transitive NuGet vulnerability auditing
 - Formatter verification
-- PowerShell parser validation for all deployment scripts
-- Successful GitHub Actions runs for the main and standalone milestone snapshots
+- PowerShell parser validation for all 13 deployment scripts
+- A clean unfinished-work marker scan and a concise-comment audit
 
 This is an engineering portfolio project, not a claim of independent antivirus
 certification or guaranteed detection of every malicious file.
@@ -94,7 +106,8 @@ certification or guaranteed detection of every malicious file.
 ## Technology
 
 C#, .NET 10, SQLite, MSTest, Windows Services, PowerShell, GitHub Actions,
-ECDSA P-256, SHA-256, JSON Lines, and Windows filesystem security controls.
+ECDSA P-256, SHA-256, HMAC-SHA256, JSON Lines, and Windows filesystem security
+controls.
 
 ## Ownership
 
