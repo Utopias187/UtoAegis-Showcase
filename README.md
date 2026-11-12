@@ -24,6 +24,9 @@ the implementation is maintained in private repositories.
 - Atomic live detector replacement with last-known-good fallback and generation leases
 - Bounded tamper-evident event chains with authenticated HTTPS forwarding
 - Signed dual-architecture releases with SBOMs and transactional rollback
+- Offline-signed runtime response policy with exact-byte verification and anti-rollback
+- A separate SYSTEM integrity guard for service, executable, and ACL drift
+- Explicitly authorized, rate-limited recovery with independent tamper telemetry
 
 ## Architecture
 
@@ -44,10 +47,19 @@ flowchart LR
     Content --> Reload[Read-only live reload]
     Reload --> Core
 
+    PolicySigner[Offline policy signer] --> Policy[Signed runtime policy]
+    Policy --> Service
+    Policy --> Guard[Scheduled SYSTEM integrity guard]
+    Guard --> SCM[Service configuration audit]
+    Guard --> Binary[Executable hash audit]
+    Guard --> ACL[Owner, group, and DACL audit]
+
     Service --> MonitorSpool[(Monitor hash chain)]
     Updater --> UpdaterSpool[(Updater hash chain)]
+    Guard --> GuardSpool[(Guard hash chain)]
     MonitorSpool --> Forwarder[Read-only telemetry forwarder]
     UpdaterSpool --> Forwarder
+    GuardSpool --> Forwarder
     Forwarder --> Collector[Authenticated HTTPS collector]
 
     Source[Locked source and dependencies] --> Release[Dual-architecture release]
@@ -59,11 +71,17 @@ flowchart LR
 
 The monitoring service remains read-only toward managed threat content. The
 updater is the only component granted content-store write access, while private
-signing keys stay off endpoints. Monitor and updater telemetry spools remain
+signing keys stay off endpoints. Runtime policy is separately signed and
+anti-rollback protected, so local configuration alone cannot silently authorize
+a stronger response. The scheduled guard independently audits Windows Service
+Control Manager settings, executable identity, and protected path ownership and
+DACLs. Recovery requires both signed-policy authorization and an installer
+opt-in, remains rate limited, and never recreates missing objects or replaces a
+modified executable. Monitor, updater, and guard telemetry spools remain
 separate; only the forwarder can read the collector credential and use the
-telemetry network boundary. Release verification independently binds every packaged
-file, the software bill of materials, and owned binaries before a staged service
-upgrade can change Service Control Manager paths.
+telemetry network boundary. Release verification independently binds every
+packaged file, the software bill of materials, and owned binaries before a
+staged service upgrade can change Service Control Manager paths.
 
 ## Milestone progression
 
@@ -83,6 +101,7 @@ upgrade can change Service Control Manager paths.
 | 11.1 | Read-only reload polling correction |
 | 12 | Tamper-evident security telemetry |
 | 13 | Signed releases and deployment hardening |
+| 14 | Authenticated runtime policy and integrity guard |
 
 ## Security-engineering highlights
 
@@ -94,27 +113,30 @@ upgrade can change Service Control Manager paths.
 - Monotonic sequence state prevents replay of older signed content.
 - Candidate detector generations are completely validated before atomic publication.
 - Invalid updates preserve the last-known-good in-memory generation.
-- Monitoring, updating, and telemetry forwarding use separate least-privilege identities.
+- Monitoring, updating, guarding, and telemetry forwarding use separate least-privilege identities.
 - Telemetry chains expose modification, reordering, stale checkpoints, and retention gaps.
 - Collector checkpoints advance only after an exact sequence-and-hash acknowledgement.
 - Release manifests reject missing, extra, modified, traversing, or reparse-point content.
 - Production bundles require approved CMS and Authenticode signing evidence.
 - Multi-service upgrades restore prior paths and running states on failure.
+- Runtime policy anti-rollback binds each sequence to one exact manifest hash.
+- The guard audits exact service command lines, accounts, start modes, executable hashes, and normalized ACL state.
+- Automatic repair requires dual authorization, excludes password-backed service identities, and uses a persistent recovery budget.
 
 ## Verification snapshot
 
-The Milestone 13 baseline was verified with:
+The Milestone 14 baseline was verified with:
 
 - .NET 10 Release build with zero warnings and zero errors
-- 265 passing automated tests across 12 projects
+- 290 passing automated tests across 14 projects
 - Locked dependency restoration with one lock file per project
 - Direct and transitive NuGet vulnerability auditing
 - Formatter verification
-- Two passing PowerShell release and deployment integration suites
-- PowerShell parser validation for all 23 automation and deployment scripts
+- Three passing PowerShell release, deployment, and runtime-policy integration suites
+- PowerShell parser validation for all 30 automation and deployment scripts
 - CycloneDX 1.7 schema validation for the 37-component release SBOM
 - Verified locked publishing for `win-x64` and `win-arm64`
-- Verified 176-file extracted development archive and SHA-256 checksum
+- Verified 197-file manifest inventory in each extracted development archive with SHA-256 checksums
 - A clean unfinished-work marker scan and a concise-comment audit
 
 This is an engineering portfolio project, not a claim of independent antivirus
@@ -122,9 +144,10 @@ certification or guaranteed detection of every malicious file.
 
 ## Technology
 
-C#, .NET 10, SQLite, MSTest, Windows Services, PowerShell, GitHub Actions,
-ECDSA P-256, SHA-256, HMAC-SHA256, Authenticode, CMS/PKCS #7, CycloneDX 1.7,
-JSON Lines, and Windows filesystem security controls.
+C#, .NET 10, SQLite, MSTest, Windows Services, Windows Service Control Manager
+APIs, Windows Task Scheduler, PowerShell, GitHub Actions, ECDSA P-256, SHA-256,
+HMAC-SHA256, Authenticode, CMS/PKCS #7, CycloneDX 1.7, JSON Lines, and Windows
+filesystem security controls.
 
 ## Ownership
 
